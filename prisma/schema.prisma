@@ -1,0 +1,67 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator docs {
+  provider = "node node_modules/prisma-docs-generator"
+  output   = "../docs"
+}
+
+model Character {
+  id             String   @id @default(uuid()) // same id with userId in User model from mongo
+  characterName  String
+  characterTitle String
+  level          Int      @default(1)
+  exp            Int      @default(0)
+  nextLevelExp   Int      @default(200)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// MARK: Exp resource section
+// This is a resource that can be used to give experience points to characters.
+
+enum ExpType {
+  LIMITED_ACCOUNT
+  LIMITED_SERVER
+  DAILY
+  WEEKLY
+}
+
+enum ExpStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  EXHAUSTED
+}
+
+model ExpResource {
+  id              String    @id @default(uuid())
+  title           Json
+  description     Json
+  type            ExpType
+  userId          String?
+  maxClaimAccount Int?
+  maxClaimServer  Int?
+  status          ExpStatus @default(ACTIVE)
+  expAmount       Int
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ExpClaim ExpClaim[]
+}
+
+model ExpClaim {
+  id            String   @id @default(uuid())
+  userId        String
+  expResourceId String
+  numberOfClaim Int      @default(1)
+  lastClaimedAt DateTime @default(now())
+
+  expResource ExpResource @relation(fields: [expResourceId], references: [id])
+}

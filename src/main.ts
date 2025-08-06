@@ -3,8 +3,7 @@ import { AppModule } from './app.module';
 import { AppLogger } from '@shared/logger';
 import { Transport } from '@nestjs/microservices';
 import { join } from 'path';
-import { GrpcLogInterceptor } from '@shared/middlewares/grpc-log.interceptor';
-
+ 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = app.get(AppLogger);
@@ -13,9 +12,9 @@ async function bootstrap() {
   app.connectMicroservice({
     transport: Transport.GRPC,
     options: {
-      package: 'rbac',
-      protoPath: join(__dirname, '../features/rbac/proto/rbac.proto'),
-      url: '0.0.0.0:4002',
+      package: 'character',
+      protoPath: 'src/proto/character.proto',
+      url: '0.0.0.0:4003',
       loader: {
         keepCase: true,
         longs: String,
@@ -26,8 +25,24 @@ async function bootstrap() {
     },
   });
 
+  app.connectMicroservice({
+    transport: Transport.GRPC,
+    options: {
+      package: 'exp',
+      protoPath: 'src/proto/exp.proto',
+      url: '0.0.0.0:4004',
+      loader: {
+        keepCase: true,
+        longs: String,
+        enums: String,
+        defaults: true,
+        oneofs: true,
+      },
+    },
+  });
   await app.startAllMicroservices();
 
-  logger.log(`Auth gRPC microservice is running on port: 4001`);
+  logger.log(`Character gRPC microservice is running on port: 4003`);
+  logger.log(`Exp gRPC microservice is running on port: 4004`);
 }
 bootstrap();
