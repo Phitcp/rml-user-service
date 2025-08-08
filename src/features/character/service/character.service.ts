@@ -1,8 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
 import { AppLogger } from '@shared/logger';
-import {
-  ReceivedExpFailed,
-} from '@root/interface/error.response';
 import {
   CreateCharacterProfileResponse,
   CreateCharacterProfileRequest,
@@ -15,15 +12,24 @@ import { PrismaService } from '@root/prisma/prisma.service';
 import { GrpcClient } from '@shared/utilities/grpc-client';
 import { ExpServiceClient } from '@root/interface/exp.proto.interface';
 import { Metadata } from '@grpc/grpc-js';
-import { firstValueFrom } from 'rxjs';
+import Redis from 'ioredis';
 
+export class ExpClaimedEvent {
+  constructor(
+    public readonly userId: string,
+    public readonly expAmount: number,
+    public readonly expResourceId: string,
+    public readonly metadata?: any,
+  ) {}
+}
 @Injectable()
-export class CharacterService {
+export class CharacterService implements OnApplicationBootstrap {
   private expService: ExpServiceClient;
   constructor(
     private appLogger: AppLogger,
     private configService: ConfigService,
     private prisma: PrismaService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {
     const grpcClient = new GrpcClient<ExpServiceClient>({
       package: 'exp',
@@ -33,6 +39,11 @@ export class CharacterService {
     });
     this.expService = grpcClient.getService();
   }
+
+ async onApplicationBootstrap() {
+    await this.subscribeToExpEvents();
+  }
+
   async createCharacterProfile(
     context: AppContext,
     payload: CreateCharacterProfileRequest,
@@ -50,9 +61,22 @@ export class CharacterService {
     return newCharacter;
   }
 
-  async receiveExp(
+  private async subscribeToExpEvents() {
+    const subscriber = this.redis.duplicate();
+    
+    await subscriber.subscribe('exp.claimed');
+    
+    subscriber.on('message', async (channel, message) => {
+      if (channel === 'exp.claimed') {
+        const { context, payload } = JSON.parse(message);
+        await this.receiveCharacterExp(context, payload);
+      }
+    });
+  }
+
+  async receiveCharacterExp(
     context: AppContext,
-    payload: any,
+    payload: ExpClaimedEvent,
     // ): Promise<CreateCharacterProfileResponse> {
   ): Promise<any> {
     const metaData = new Metadata();
@@ -60,23 +84,14 @@ export class CharacterService {
     this.appLogger
       .addLogContext(context.traceId)
       .addMsgParam(basename(__filename))
-      .addMsgParam('receiveExp')
-      .log('Will receiveExp');
-
-    // validate exp resource
-    const validResource = await firstValueFrom(
-      this.expService.validateExpResource(payload, metaData),
-    );
-    if (!validResource) {
-      this.appLogger.log('Exp Resource is invalid');
-      throw new ReceivedExpFailed();
-    }
+      .addMsgParam('receiveCharacterExp')
+      .log('Will receiveCharacterExp');
 
     const newCharacterValue = await this.prisma.character.update({
       where: { id: payload.userId },
       data: {
         exp: {
-          increment: validResource.expAmount,
+          increment: payload.expAmount,
         },
       },
     });

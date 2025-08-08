@@ -41,7 +41,7 @@ async function bootstrap() {
     },
   });
   await app.startAllMicroservices();
-
+  await app.listen(9999);
   logger.log(`Character gRPC microservice is running on port: 4003`);
   logger.log(`Exp gRPC microservice is running on port: 4004`);
 }

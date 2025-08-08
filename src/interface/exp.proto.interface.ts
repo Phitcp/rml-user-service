@@ -46,6 +46,11 @@ export interface ValidateExpResourceResponse {
   errorMessage?: string | undefined;
   expAmount: number;
 }
+export interface ClaimExpRequest {
+  userId: string;
+  expAmount: number;
+  expResourceId: string;
+}
 
 export const EXP_PACKAGE_NAME = "exp";
 
@@ -59,6 +64,11 @@ export interface ExpServiceClient {
     request: ValidateExpResourceRequest,
     metaData: Metadata,
   ): Observable<ValidateExpResourceResponse>;
+
+  claimExp(
+    request: ClaimExpRequest,
+    metaData: Metadata,
+  ): Observable<void>;
 }
 
 export interface ExpServiceController {
@@ -71,6 +81,11 @@ export interface ExpServiceController {
     request: ValidateExpResourceRequest,
     metaData: Metadata
   ): Promise<ValidateExpResourceResponse> | Observable<ValidateExpResourceResponse> | ValidateExpResourceResponse;
+
+  claimExp(
+    request: ClaimExpRequest,
+    metaData: Metadata
+  ): Promise<void> | Observable<void> | void;
 }
 
 export function ExpServiceControllerMethods() {
