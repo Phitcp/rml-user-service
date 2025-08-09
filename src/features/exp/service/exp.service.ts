@@ -13,16 +13,54 @@ export class ExpClaimedEvent {
   ) {}
 }
 
+export interface ValidateExpResultObject extends ExpResource {
+  isValid?: boolean;
+  error?: string;
+}
+
 @Injectable()
 export class ExpService {
   constructor(
     private readonly appLogger: AppLogger,
     private readonly prisma: PrismaService,
-     private readonly redis: RedisService,
+    private readonly redis: RedisService,
   ) {}
 
-  // #region exp source validator
-  async validateExpResource(context: AppContext, data: any): Promise<any> {
+  async claimExp(context: AppContext, data: any) {
+    this.appLogger
+      .addLogContext(context.traceId)
+      .addMsgParam('ExpService')
+      .addMsgParam('claimExp')
+      .log('Will claim Exp');
+
+    const validResource = await this.validateExpResource(context, data);
+    if (!validResource.isValid) {
+      this.appLogger.log('Exp Resource is invalid');
+      throw new Error('Exp Resource is invalid');
+    }
+
+    await this.redis.client.publish(
+      'exp.claimed',
+      JSON.stringify({
+        context,
+        payload: {
+          userId: data.userId,
+          expAmount: validResource.expAmount,
+          expResourceId: data.expResourceId,
+        },
+      }),
+    );
+
+    await this.ExpProcessor[validResource.type!](
+      data.expResourceId,
+      data.userId,
+    );
+  }
+
+  async validateExpResource(
+    context: AppContext,
+    data: any,
+  ): Promise<Partial<ValidateExpResultObject>> {
     this.appLogger
       .addLogContext(context.traceId)
       .addMsgParam('ExpService')
@@ -52,9 +90,11 @@ export class ExpService {
 
     return {
       isValid,
+      ...resource,
     };
   }
 
+  // MARK: EXP PROCESSOR -------------------------------------------------------------------------------------
   private Validator = {
     [ExpType.LIMITED_ACCOUNT]: (resource: ExpResource, userId: string) =>
       this.limitedAccountClaimedValidation(resource, userId),
@@ -81,6 +121,7 @@ export class ExpService {
     // This function will check if the user has already claimed this resource today
     // If yes, return an error response
     // If no, allow the claim to proceed
+    return true; // Placeholder for actual implementation
   }
 
   private weeklyClaimedValidation(resource: any, userId: string) {
@@ -88,6 +129,8 @@ export class ExpService {
     // This function will check if the user has already claimed this resource this week
     // If yes, return an error response
     // If no, allow the claim to proceed
+
+    return true;
   }
 
   private limitedServerClaimedValidation(resource: any, userId: string) {
@@ -95,6 +138,8 @@ export class ExpService {
     // This function will check if the user has reached the maximum claim limit for this resource
     // If yes, return an error response
     // If no, allow the claim to proceed
+
+    return true;
   }
   // #endregion exp source validator
 
@@ -102,29 +147,35 @@ export class ExpService {
 
   // #region event exp claimed emitter
 
-  async claimExp(context: AppContext, data: any) {
-    this.appLogger
-      .addLogContext(context.traceId)
-      .addMsgParam('ExpService')
-      .addMsgParam('claimExp')
-      .log('Will claim Exp');
+  // #region exp processor post claimed event emitted
+  private ExpProcessor = {
+    [ExpType.LIMITED_ACCOUNT]: (resource: ExpResource, userId: string) =>
+      this.limitedAccountProcessor(resource, userId),
+    [ExpType.DAILY]: (resource: ExpResource, userId: string) =>
+      this.dailyClaimedProcessor(resource, userId),
+    [ExpType.WEEKLY]: (resource: ExpResource, userId: string) =>
+      this.weeklyClaimedProcessor(resource, userId),
+    [ExpType.LIMITED_SERVER]: (resource: ExpResource, userId: string) =>
+      this.limitedServerClaimedProcessor(resource, userId),
+  };
 
-    const validResource = await this.validateExpResource(context, data);
-    if (!validResource.isValid) {
-      this.appLogger.log('Exp Resource is invalid');
-      throw new Error('Exp Resource is invalid');
-    }
-
-    await this.redis.publish(
-      'exp.claimed',
-      JSON.stringify({
-        context,
-        payload : {
-        userId: data.userId,
-        expAmount: data.expAmount,
-        expResourceId: data.expResourceId,
-        }
-      }),
-    );
+  private async limitedAccountProcessor(resource: ExpResource, userId: string) {
+    // Implementation here
   }
+
+  private async dailyClaimedProcessor(resource: ExpResource, userId: string) {
+    // Implementation here
+  }
+
+  private async weeklyClaimedProcessor(resource: ExpResource, userId: string) {
+    // Implementation here
+  }
+
+  private async limitedServerClaimedProcessor(
+    resource: ExpResource,
+    userId: string,
+  ) {
+    // Implementation here
+  }
+  // #endregion
 }

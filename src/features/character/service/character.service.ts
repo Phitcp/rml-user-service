@@ -1,4 +1,10 @@
-import { Inject, Injectable, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
+import { characterConfig } from './../../../config/character.config';
+import {
+  Inject,
+  Injectable,
+  OnApplicationBootstrap,
+  OnModuleInit,
+} from '@nestjs/common';
 import { AppLogger } from '@shared/logger';
 import {
   CreateCharacterProfileResponse,
@@ -9,11 +15,9 @@ import { basename } from 'path';
 import { ConfigService } from '@nestjs/config';
 import { CharacterConfigInterface } from '@app/config/interfaces/character.interface';
 import { PrismaService } from '@root/prisma/prisma.service';
-import { GrpcClient } from '@shared/utilities/grpc-client';
-import { ExpServiceClient } from '@root/interface/exp.proto.interface';
 import { Metadata } from '@grpc/grpc-js';
-import Redis from 'ioredis';
-
+import { RedisService } from '@root/redis/redis.service';
+import { ReceivedExpFailed } from '@root/interface/error.response';
 export class ExpClaimedEvent {
   constructor(
     public readonly userId: string,
@@ -24,23 +28,15 @@ export class ExpClaimedEvent {
 }
 @Injectable()
 export class CharacterService implements OnApplicationBootstrap {
-  private expService: ExpServiceClient;
   constructor(
     private appLogger: AppLogger,
     private configService: ConfigService,
     private prisma: PrismaService,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly redis: RedisService,
   ) {
-    const grpcClient = new GrpcClient<ExpServiceClient>({
-      package: 'exp',
-      protoPath: 'src/proto/exp.proto',
-      url: '0.0.0.0:4004',
-      serviceName: 'ExpService',
-    });
-    this.expService = grpcClient.getService();
   }
 
- async onApplicationBootstrap() {
+  async onApplicationBootstrap() {
     await this.subscribeToExpEvents();
   }
 
@@ -48,6 +44,11 @@ export class CharacterService implements OnApplicationBootstrap {
     context: AppContext,
     payload: CreateCharacterProfileRequest,
   ): Promise<CreateCharacterProfileResponse> {
+    this.appLogger.addLogContext(context.traceId)
+      .addMsgParam(basename(__filename))
+      .addMsgParam('createCharacterProfile')
+      .log('Will create character profile');
+
     const characterConfig =
       this.configService.get<CharacterConfigInterface>('character');
     const newCharacterData = {
@@ -58,14 +59,15 @@ export class CharacterService implements OnApplicationBootstrap {
     const newCharacter = await this.prisma.character.create({
       data: newCharacterData,
     });
+    this.appLogger.log('Did create character profile');
     return newCharacter;
   }
 
   private async subscribeToExpEvents() {
-    const subscriber = this.redis.duplicate();
-    
+    const subscriber = this.redis.client.duplicate();
+
     await subscriber.subscribe('exp.claimed');
-    
+
     subscriber.on('message', async (channel, message) => {
       if (channel === 'exp.claimed') {
         const { context, payload } = JSON.parse(message);
@@ -77,16 +79,40 @@ export class CharacterService implements OnApplicationBootstrap {
   async receiveCharacterExp(
     context: AppContext,
     payload: ExpClaimedEvent,
-    // ): Promise<CreateCharacterProfileResponse> {
   ): Promise<any> {
-    const metaData = new Metadata();
-    metaData.add('traceId', context.traceId);
     this.appLogger
       .addLogContext(context.traceId)
       .addMsgParam(basename(__filename))
       .addMsgParam('receiveCharacterExp')
       .log('Will receiveCharacterExp');
 
+    const metaData = new Metadata();
+    metaData.add('traceId', context.traceId);
+    const foundUser = await this.prisma.character.findUnique({
+      where: { id: payload.userId },
+    });
+
+    if (!foundUser) {
+      this.appLogger.log('User not found');
+      throw new ReceivedExpFailed({ details: 'User not found' });
+    }
+
+    const { isLevelUp, redundantExp } = await this.checkLevelUp(
+      foundUser.exp,
+      payload.expAmount,
+      foundUser.nextLevelExp,
+    );
+    if (isLevelUp) {
+      const nextLevelExp = this.getNextLevelExp(foundUser.level + 1);
+      await this.prisma.character.update({
+        where: { id: payload.userId },
+        data: {
+          level: foundUser.level + 1,
+          exp: redundantExp,
+          nextLevelExp,
+        },
+      });
+    }
     const newCharacterValue = await this.prisma.character.update({
       where: { id: payload.userId },
       data: {
@@ -96,5 +122,28 @@ export class CharacterService implements OnApplicationBootstrap {
       },
     });
     return newCharacterValue;
+  }
+
+  private getNextLevelExp = (level: number) => {
+    const characterConfig =
+      this.configService.get<CharacterConfigInterface>('character')!;
+    const exponent = 1.1;
+    const nextLevelExp = Math.floor(
+      characterConfig.DEFAULT_EXP_REQUIRED * level ** exponent,
+    );
+    return nextLevelExp;
+  };
+
+  private async checkLevelUp(
+    currentExp: number,
+    receiveExp: number,
+    nextLevelExp: number,
+  ): Promise<{ isLevelUp: boolean; redundantExp: number }> {
+    const isLevelUp = currentExp + receiveExp >= nextLevelExp;
+    if (isLevelUp) {
+      this.appLogger.log('User has leveled up');
+    }
+    const redundantExp = currentExp + receiveExp - nextLevelExp;
+    return { isLevelUp, redundantExp };
   }
 }

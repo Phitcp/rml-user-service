@@ -5,7 +5,7 @@ import { CharacterService } from './service/character.service';
 
 import { AppLogger } from '@shared/logger';
 import { PrismaService } from '@root/prisma/prisma.service';
-import Redis from 'ioredis';
+import { RedisService } from '@root/redis/redis.service';
 
 @Module({
   controllers: [CharacterController],
@@ -13,15 +13,7 @@ import Redis from 'ioredis';
     AppLogger,
     CharacterService,
     PrismaService,
-    {
-      provide: 'REDIS_CLIENT',
-      useFactory: async () => {
-        return new Redis({
-          host: '127.0.0.1',
-          port: 6379,
-        });
-      },
-    },
+    RedisService,
   ],
 })
 export class CharacterModule {}

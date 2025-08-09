@@ -42,9 +42,9 @@ export interface ValidateExpResourceRequest {
 }
 
 export interface ValidateExpResourceResponse {
-  isValid: boolean;
+  isValid?: boolean;
   errorMessage?: string | undefined;
-  expAmount: number;
+  expAmount?: number;
 }
 export interface ClaimExpRequest {
   userId: string;

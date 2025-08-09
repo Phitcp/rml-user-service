@@ -8,13 +8,11 @@ import { GrpcLogInterceptor } from '@shared/middlewares/grpc-log.interceptor';
 import { CharacterModule } from './features/character/character.module';
 import { ExpModule } from './features/exp/exp.module';
 import { RedisModule } from './redis/redis.module';
-
 @Module({
   imports: [
     CharacterModule,
     AppConfigModule,
     ExpModule,
-    RedisModule
   ],
   controllers: [AppController],
   providers: [

@@ -3,10 +3,10 @@ import { RpcException } from '@nestjs/microservices';
 
 export class CreateCharacterFailed extends RpcException {
   constructor(
-    errObject = {
-      errorCode: status.INTERNAL,
-      details: 'Failed to Create character',
-    },
+    errObject: {
+      errorCode?: number;
+      details?: string;
+    } = {}
   ) {
     super({
       error: errObject.errorCode || status.INTERNAL,
@@ -17,10 +17,10 @@ export class CreateCharacterFailed extends RpcException {
 
 export class ReceivedExpFailed extends RpcException {
   constructor(
-    errObject = {
-      errorCode: status.PERMISSION_DENIED,
-      details: 'Failed to receive experience',
-    },
+    errObject: {
+      errorCode?: number;
+      details?: string;
+    } = {}
   ) {
     super({
       error: errObject.errorCode || status.PERMISSION_DENIED,

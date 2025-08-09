@@ -30,7 +30,7 @@ export class RedisService {
     }
   }
 
-  async publish(channel: string, message: string): Promise<void> {
-    await this.redisClient.publish(channel, message);
+  get client(): Redis {
+    return this.redisClient;
   }
 }
