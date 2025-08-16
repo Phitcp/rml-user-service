@@ -72,6 +72,12 @@ export class CharacterService implements OnApplicationBootstrap {
       if (channel === 'exp.claimed') {
         const { context, payload } = JSON.parse(message);
         await this.receiveCharacterExp(context, payload);
+
+        // todo: add logic to get the new data and send it via sync-data event
+        const newCharacterData = await this.prisma.character.findUnique({
+          where: { id: payload.userId },
+        });
+        await this.redis.client.publish('sync-data', JSON.stringify({ context, payload: newCharacterData }));
       }
     });
   }
